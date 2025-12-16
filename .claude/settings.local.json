@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -m pip install:*)",
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "Bash(del \"C:\\Users\\Hp\\Desktop\\progettini\\Hype Cycle\\data\\hype_cycle.db\")"
+    ]
+  }
+}
