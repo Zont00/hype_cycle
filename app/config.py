@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     reddit_batch_size: int = 100  # API max per request
     reddit_sort: str = "relevance"  # relevance, hot, top, new, comments
 
+    # NewsAPI.org
+    newsapi_api_key: Optional[str] = None
+    newsapi_base_url: str = "https://newsapi.org"
+    newsapi_page_size: int = 100  # Max per request
+    newsapi_max_articles: int = 500  # Total articles to collect per technology
+    newsapi_language: str = "en"
+    newsapi_sort_by: str = "relevancy"  # relevancy, popularity, publishedAt
+    newsapi_lookback_days: int = 30  # Free tier: max 30 days (paid plans: up to years)
+
     # Collection parameters
     max_batches_per_collection: int = 10
     batch_size: int = 1000
