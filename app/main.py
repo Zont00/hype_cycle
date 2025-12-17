@@ -4,14 +4,16 @@ from typing import List, Optional
 import logging
 
 from .database import engine, get_db, Base
-from .models import Technology, Paper, Patent
+from .models import Technology, Paper, Patent, RedditPost
 from .schemas import (
     TechnologyCreate, TechnologyUpdate, TechnologyResponse,
     PaperResponse, CollectionStats,
-    PatentResponse, PatentCollectionStats
+    PatentResponse, PatentCollectionStats,
+    RedditPostResponse, RedditCollectionStats
 )
 from .services.semantic_scholar_collector import SemanticScholarCollector
 from .services.patents_view_collector import PatentsViewCollector
+from .services.reddit_collector import RedditCollector
 
 # Configure logging
 logging.basicConfig(
@@ -356,6 +358,102 @@ def get_technology_patents(
         .all()
 
     return patents
+
+
+@app.post(
+    "/technologies/{technology_id}/collect-reddit-posts",
+    response_model=RedditCollectionStats,
+    status_code=200,
+    tags=["Reddit"]
+)
+async def collect_reddit_posts(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger Reddit post collection for a specific technology.
+
+    - **technology_id**: ID of the technology to collect posts for
+
+    Process:
+    1. Builds search query from technology keywords and excluded terms
+    2. Searches Reddit for the top 250 most relevant posts
+    3. Collects posts in 3 batches (100+100+50) using pagination
+    4. Saves posts to database with duplicate detection
+
+    Returns collection statistics including:
+    - Total posts found
+    - Posts collected
+    - New vs duplicate posts
+    - Any errors encountered
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    if not technology.is_active:
+        raise HTTPException(status_code=400, detail=f"Technology '{technology.name}' is not active")
+
+    # Initialize collector
+    collector = RedditCollector(db)
+
+    # Execute collection
+    try:
+        stats = await collector.collect_posts(technology_id)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Reddit collection failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Reddit collection failed. Check logs for details.")
+
+
+@app.get(
+    "/technologies/{technology_id}/reddit-posts",
+    response_model=List[RedditPostResponse],
+    tags=["Reddit"]
+)
+def get_technology_reddit_posts(
+    technology_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    order_by: str = Query("score", description="Order by: score, created_utc, or num_comments"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all Reddit posts collected for a specific technology.
+
+    - **technology_id**: ID of the technology
+    - **skip**: Pagination offset
+    - **limit**: Max results (default 100, max 1000)
+    - **order_by**: Sort field (score, created_utc, or num_comments)
+
+    Results ordered by the specified field in descending order.
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Build query with ordering
+    query = db.query(RedditPost).filter(RedditPost.technology_id == technology_id)
+
+    # Apply ordering based on parameter
+    if order_by == "score":
+        query = query.order_by(RedditPost.score.desc())
+    elif order_by == "created_utc":
+        query = query.order_by(RedditPost.created_utc.desc())
+    elif order_by == "num_comments":
+        query = query.order_by(RedditPost.num_comments.desc())
+    else:
+        # Default to score if invalid parameter
+        query = query.order_by(RedditPost.score.desc())
+
+    # Apply pagination
+    posts = query.offset(skip).limit(limit).all()
+
+    return posts
 
 
 if __name__ == "__main__":
