@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     patents_view_api_key: Optional[str] = None
     patents_view_base_url: str = "https://search.patentsview.org"
 
+    # Reddit API
+    reddit_base_url: str = "https://www.reddit.com"
+    reddit_posts_limit: int = 250  # Total posts to collect
+    reddit_batch_size: int = 100  # API max per request
+    reddit_sort: str = "relevance"  # relevance, hot, top, new, comments
+
     # Collection parameters
     max_batches_per_collection: int = 10
     batch_size: int = 1000
