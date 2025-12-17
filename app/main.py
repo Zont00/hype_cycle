@@ -4,9 +4,14 @@ from typing import List, Optional
 import logging
 
 from .database import engine, get_db, Base
-from .models import Technology, Paper
-from .schemas import TechnologyCreate, TechnologyUpdate, TechnologyResponse, PaperResponse, CollectionStats
+from .models import Technology, Paper, Patent
+from .schemas import (
+    TechnologyCreate, TechnologyUpdate, TechnologyResponse,
+    PaperResponse, CollectionStats,
+    PatentResponse, PatentCollectionStats
+)
 from .services.semantic_scholar_collector import SemanticScholarCollector
+from .services.patents_view_collector import PatentsViewCollector
 
 # Configure logging
 logging.basicConfig(
@@ -265,6 +270,92 @@ def get_technology_papers(
         .all()
 
     return papers
+
+
+@app.post(
+    "/technologies/{technology_id}/collect-patents",
+    response_model=PatentCollectionStats,
+    status_code=200,
+    tags=["Patents"]
+)
+async def collect_patents(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger patent collection from PatentsView for a specific technology.
+
+    - **technology_id**: ID of the technology to collect patents for
+
+    Process:
+    1. Builds JSON query from technology keywords and excluded terms
+    2. Searches PatentsView for patents in the last 10 years
+    3. Collects all matching patents using cursor pagination
+    4. Applies rate limiting (45 requests/minute)
+    5. Saves patents with assignee data and duplicate detection
+
+    Returns collection statistics including:
+    - Total patents found
+    - Patents collected
+    - New vs duplicate patents
+    - Any errors encountered
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    if not technology.is_active:
+        raise HTTPException(status_code=400, detail=f"Technology '{technology.name}' is not active")
+
+    # Initialize collector
+    collector = PatentsViewCollector(db)
+
+    # Execute collection
+    try:
+        stats = await collector.collect_patents(technology_id)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Patent collection failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Patent collection failed. Check logs for details.")
+
+
+@app.get(
+    "/technologies/{technology_id}/patents",
+    response_model=List[PatentResponse],
+    tags=["Patents"]
+)
+def get_technology_patents(
+    technology_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all patents collected for a specific technology.
+
+    - **technology_id**: ID of the technology
+    - **skip**: Pagination offset
+    - **limit**: Max results (default 100, max 1000)
+
+    Results ordered by citation count (most cited first).
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Query patents ordered by citation count (descending)
+    patents = db.query(Patent)\
+        .filter(Patent.technology_id == technology_id)\
+        .order_by(Patent.patent_num_times_cited_by_us_patents.desc())\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+
+    return patents
 
 
 if __name__ == "__main__":
