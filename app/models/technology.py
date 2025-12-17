@@ -31,6 +31,9 @@ class Technology(Base):
     # Relationship to Reddit posts
     reddit_posts = relationship("RedditPost", back_populates="technology", cascade="all, delete-orphan")
 
+    # Relationship to news articles
+    news_articles = relationship("NewsArticle", back_populates="technology", cascade="all, delete-orphan")
+
     # Property methods for keywords (list of strings)
     @property
     def keywords(self):

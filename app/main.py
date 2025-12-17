@@ -4,16 +4,18 @@ from typing import List, Optional
 import logging
 
 from .database import engine, get_db, Base
-from .models import Technology, Paper, Patent, RedditPost
+from .models import Technology, Paper, Patent, RedditPost, NewsArticle
 from .schemas import (
     TechnologyCreate, TechnologyUpdate, TechnologyResponse,
     PaperResponse, CollectionStats,
     PatentResponse, PatentCollectionStats,
-    RedditPostResponse, RedditCollectionStats
+    RedditPostResponse, RedditCollectionStats,
+    NewsArticleResponse, NewsCollectionStats
 )
 from .services.semantic_scholar_collector import SemanticScholarCollector
 from .services.patents_view_collector import PatentsViewCollector
 from .services.reddit_collector import RedditCollector
+from .services.news_collector import NewsCollector
 
 # Configure logging
 logging.basicConfig(
@@ -454,6 +456,93 @@ def get_technology_reddit_posts(
     posts = query.offset(skip).limit(limit).all()
 
     return posts
+
+
+@app.post(
+    "/technologies/{technology_id}/collect-news",
+    response_model=NewsCollectionStats,
+    status_code=200,
+    tags=["News"]
+)
+async def collect_news(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger news article collection from NewsAPI.org for a specific technology.
+
+    - **technology_id**: ID of the technology to collect news for
+
+    Process:
+    1. Builds search query from technology keywords and excluded terms
+    2. Searches NewsAPI.org for articles in the last 10 years
+    3. Collects up to 500 articles using pagination
+    4. Saves articles to database with duplicate detection
+
+    Returns collection statistics including:
+    - Total articles found
+    - Articles collected
+    - New vs duplicate articles
+    - Any errors encountered
+
+    Rate Limit: NewsAPI free tier allows 100 requests/day
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    if not technology.is_active:
+        raise HTTPException(status_code=400, detail=f"Technology '{technology.name}' is not active")
+
+    # Initialize collector
+    collector = NewsCollector(db)
+
+    # Execute collection
+    try:
+        stats = await collector.collect_articles(technology_id)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"News collection failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="News collection failed. Check logs for details.")
+
+
+@app.get(
+    "/technologies/{technology_id}/news",
+    response_model=List[NewsArticleResponse],
+    tags=["News"]
+)
+def get_technology_news(
+    technology_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all news articles collected for a specific technology.
+
+    - **technology_id**: ID of the technology
+    - **skip**: Pagination offset
+    - **limit**: Max results (default 100, max 1000)
+
+    Results ordered by publication date (most recent first).
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Query articles ordered by publication date (descending)
+    articles = db.query(NewsArticle)\
+        .filter(NewsArticle.technology_id == technology_id)\
+        .order_by(NewsArticle.published_at.desc())\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+
+    return articles
 
 
 if __name__ == "__main__":
