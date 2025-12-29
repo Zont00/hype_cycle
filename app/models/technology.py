@@ -34,6 +34,12 @@ class Technology(Base):
     # Relationship to news articles
     news_articles = relationship("NewsArticle", back_populates="technology", cascade="all, delete-orphan")
 
+    # Relationship to stock prices
+    stock_prices = relationship("StockPrice", back_populates="technology", cascade="all, delete-orphan")
+
+    # Relationship to stock info
+    stock_info = relationship("StockInfo", back_populates="technology", cascade="all, delete-orphan")
+
     # Property methods for keywords (list of strings)
     @property
     def keywords(self):

@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     newsapi_sort_by: str = "relevancy"  # relevancy, popularity, publishedAt
     newsapi_lookback_days: int = 30  # Free tier: max 30 days (paid plans: up to years)
 
+    # Yahoo Finance (via yfinance - no API key required)
+    finance_lookback_years: int = 10  # Historical data lookback period
+    finance_frequency: str = "1mo"  # Data frequency: 1d (daily), 1wk (weekly), 1mo (monthly)
+    finance_market_indices: str = '["^IXIC", "^GSPC"]'  # Market indices for comparison (NASDAQ, S&P500)
+    finance_batch_delay_seconds: float = 0.5  # Delay between ticker requests for rate limiting
+
     # Collection parameters
     max_batches_per_collection: int = 10
     batch_size: int = 1000
