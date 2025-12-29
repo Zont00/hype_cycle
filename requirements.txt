@@ -5,3 +5,4 @@ python-dotenv
 pydantic
 pydantic-settings
 httpx
+yfinance>=0.2.40

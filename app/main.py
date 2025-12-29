@@ -4,18 +4,20 @@ from typing import List, Optional
 import logging
 
 from .database import engine, get_db, Base
-from .models import Technology, Paper, Patent, RedditPost, NewsArticle
+from .models import Technology, Paper, Patent, RedditPost, NewsArticle, StockPrice, StockInfo
 from .schemas import (
     TechnologyCreate, TechnologyUpdate, TechnologyResponse,
     PaperResponse, CollectionStats,
     PatentResponse, PatentCollectionStats,
     RedditPostResponse, RedditCollectionStats,
-    NewsArticleResponse, NewsCollectionStats
+    NewsArticleResponse, NewsCollectionStats,
+    StockPriceResponse, StockInfoResponse, FinanceCollectionStats
 )
 from .services.semantic_scholar_collector import SemanticScholarCollector
 from .services.patents_view_collector import PatentsViewCollector
 from .services.reddit_collector import RedditCollector
 from .services.news_collector import NewsCollector
+from .services.yahoo_finance_collector import YahooFinanceCollector
 
 # Configure logging
 logging.basicConfig(
@@ -543,6 +545,148 @@ def get_technology_news(
         .all()
 
     return articles
+
+
+@app.post(
+    "/technologies/{technology_id}/collect-finance",
+    response_model=FinanceCollectionStats,
+    status_code=200,
+    tags=["Finance"]
+)
+async def collect_finance_data(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger stock market data collection from Yahoo Finance for a specific technology.
+
+    - **technology_id**: ID of the technology to collect finance data for
+
+    Process:
+    1. Collects 10 years of monthly OHLCV data (Open, High, Low, Close, Volume)
+    2. Collects latest fundamentals (Market Cap, P/E Ratio, EPS, Beta, etc.)
+    3. Collects company information (sector, industry, description)
+    4. Includes market indices for comparison (NASDAQ, S&P500)
+
+    Data sources:
+    - Technology-specific tickers from technology.tickers field
+    - Market indices (^IXIC NASDAQ, ^GSPC S&P500)
+
+    Returns collection statistics including:
+    - Tickers processed
+    - Prices collected (new vs duplicates)
+    - Company info updated
+    - Any errors encountered
+
+    Note: Yahoo Finance data is free via yfinance library (no API key required)
+    Rate limiting: 0.5s delay between ticker requests
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    if not technology.is_active:
+        raise HTTPException(status_code=400, detail=f"Technology '{technology.name}' is not active")
+
+    # Initialize collector
+    collector = YahooFinanceCollector(db)
+
+    # Execute collection
+    try:
+        stats = await collector.collect_finance_data(technology_id)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Finance collection failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Finance collection failed. Check logs for details.")
+
+
+@app.get(
+    "/technologies/{technology_id}/finance/prices",
+    response_model=List[StockPriceResponse],
+    tags=["Finance"]
+)
+def get_technology_stock_prices(
+    technology_id: int,
+    ticker: Optional[str] = Query(None, description="Filter by specific ticker (e.g., 'AAPL')"),
+    start_date: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """
+    Get stock price time-series data for a specific technology.
+
+    - **technology_id**: ID of the technology
+    - **ticker**: Optional filter by ticker symbol
+    - **start_date**: Optional start date filter (YYYY-MM-DD)
+    - **end_date**: Optional end date filter (YYYY-MM-DD)
+    - **skip**: Pagination offset
+    - **limit**: Max results (default 100, max 1000)
+
+    Returns OHLCV data ordered by date descending (most recent first).
+    Data includes both technology-specific tickers and market indices.
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Build query with optional filters
+    query = db.query(StockPrice).filter(StockPrice.technology_id == technology_id)
+
+    if ticker:
+        query = query.filter(StockPrice.ticker == ticker)
+
+    if start_date:
+        query = query.filter(StockPrice.date >= start_date)
+
+    if end_date:
+        query = query.filter(StockPrice.date <= end_date)
+
+    # Order by date descending and apply pagination
+    prices = query.order_by(StockPrice.date.desc()).offset(skip).limit(limit).all()
+
+    return prices
+
+
+@app.get(
+    "/technologies/{technology_id}/finance/info",
+    response_model=List[StockInfoResponse],
+    tags=["Finance"]
+)
+def get_technology_stock_info(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get stock metadata and fundamentals for a specific technology.
+
+    - **technology_id**: ID of the technology
+
+    Returns:
+    - Company information (name, sector, industry, description, website)
+    - Latest fundamentals snapshot (Market Cap, P/E, Beta, Dividend Yield, EPS, etc.)
+    - Data for both technology-specific tickers and market indices
+
+    Note: Fundamentals represent current snapshot updated on each collection run.
+    For historical price data, use /finance/prices endpoint.
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Query all stock info for this technology
+    stock_info = db.query(StockInfo)\
+        .filter(StockInfo.technology_id == technology_id)\
+        .order_by(StockInfo.ticker)\
+        .all()
+
+    return stock_info
 
 
 if __name__ == "__main__":
