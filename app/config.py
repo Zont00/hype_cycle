@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     retry_delay_seconds: int = 2
     request_timeout_seconds: int = 30
 
+    # Hype Cycle Analysis Configuration
+    hype_cycle_velocity_growth_threshold: float = 20.0  # % increase = increasing trend
+    hype_cycle_velocity_decline_threshold: float = -15.0  # % decrease = declining trend
+    hype_cycle_citation_growth_high: float = 30.0  # % = rapid growth
+    hype_cycle_citation_growth_moderate: float = 10.0  # % = moderate growth
+    hype_cycle_basic_research_high: float = 70.0  # % = mostly basic science
+    hype_cycle_applied_research_high: float = 60.0  # % = mostly applied
+    hype_cycle_applied_research_very_high: float = 80.0  # % = overwhelmingly applied
+    hype_cycle_min_papers_for_analysis: int = 100  # minimum papers needed
+
     class Config:
         env_file = ".env"
 
