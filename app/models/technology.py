@@ -40,6 +40,9 @@ class Technology(Base):
     # Relationship to stock info
     stock_info = relationship("StockInfo", back_populates="technology", cascade="all, delete-orphan")
 
+    # Relationship to analysis
+    analysis = relationship("TechnologyAnalysis", back_populates="technology", uselist=False, cascade="all, delete-orphan")
+
     # Property methods for keywords (list of strings)
     @property
     def keywords(self):

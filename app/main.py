@@ -4,20 +4,24 @@ from typing import List, Optional
 import logging
 
 from .database import engine, get_db, Base
-from .models import Technology, Paper, Patent, RedditPost, NewsArticle, StockPrice, StockInfo
+from .models import Technology, Paper, Patent, RedditPost, NewsArticle, StockPrice, StockInfo, TechnologyAnalysis
 from .schemas import (
     TechnologyCreate, TechnologyUpdate, TechnologyResponse,
     PaperResponse, CollectionStats,
     PatentResponse, PatentCollectionStats,
     RedditPostResponse, RedditCollectionStats,
     NewsArticleResponse, NewsCollectionStats,
-    StockPriceResponse, StockInfoResponse, FinanceCollectionStats
+    StockPriceResponse, StockInfoResponse, FinanceCollectionStats,
+    AnalysisResponse
 )
 from .services.semantic_scholar_collector import SemanticScholarCollector
 from .services.patents_view_collector import PatentsViewCollector
 from .services.reddit_collector import RedditCollector
 from .services.news_collector import NewsCollector
 from .services.yahoo_finance_collector import YahooFinanceCollector
+from .services.paper_metrics_calculator import PaperMetricsCalculator
+from .services.hype_cycle_rule_engine import HypeCycleRuleEngine
+from .config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -687,6 +691,177 @@ def get_technology_stock_info(
         .all()
 
     return stock_info
+
+
+# ============================================================================
+# HYPE CYCLE ANALYSIS ENDPOINTS
+# ============================================================================
+
+@app.post(
+    "/technologies/{technology_id}/analyze-papers",
+    response_model=AnalysisResponse,
+    status_code=200,
+    tags=["Analysis"]
+)
+async def analyze_papers_for_hype_cycle(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze papers for a technology to determine Hype Cycle phase.
+
+    - **technology_id**: ID of the technology to analyze
+
+    Process:
+    1. Calculate metrics from collected papers:
+       - Publication velocity trends
+       - Citation growth rates
+       - Research type distribution (basic vs applied)
+       - Topic/keyword analysis
+       - Venue type distribution
+
+    2. Apply rule-based engine to determine phase:
+       - Technology Trigger
+       - Peak of Inflated Expectations
+       - Trough of Disillusionment
+       - Slope of Enlightenment
+       - Plateau of Productivity
+
+    3. Store analysis results in database
+
+    Returns:
+    - Current Hype Cycle phase
+    - Confidence score
+    - Detailed metrics
+    - Rule evaluation scores
+    - Rationale for phase determination
+
+    Requirements:
+    - Minimum 100 papers collected for reliable analysis
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Check if papers exist
+    paper_count = db.query(Paper).filter(Paper.technology_id == technology_id).count()
+    min_papers = settings.hype_cycle_min_papers_for_analysis
+
+    if paper_count < min_papers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient papers for analysis. Found {paper_count}, need at least {min_papers}."
+        )
+
+    try:
+        logger.info(f"Starting Hype Cycle analysis for technology {technology_id} ({technology.name})...")
+
+        # Calculate metrics
+        logger.info("Calculating metrics from papers...")
+        calculator = PaperMetricsCalculator(db)
+        metrics = calculator.calculate_metrics(technology_id)
+
+        # Determine phase using rule engine
+        logger.info("Determining Hype Cycle phase...")
+        engine = HypeCycleRuleEngine()
+        phase, confidence, rule_scores, rationale = engine.determine_phase(metrics)
+
+        # Get date range from papers
+        papers = db.query(Paper).filter(Paper.technology_id == technology_id).all()
+        years = [p.year for p in papers if p.year]
+        date_range_start = f"{min(years)}-01-01" if years else None
+        date_range_end = f"{max(years)}-12-31" if years else None
+
+        # Save or update analysis
+        existing_analysis = db.query(TechnologyAnalysis)\
+            .filter(TechnologyAnalysis.technology_id == technology_id)\
+            .first()
+
+        if existing_analysis:
+            # Update existing
+            logger.info("Updating existing analysis...")
+            existing_analysis.current_phase = phase.value
+            existing_analysis.phase_confidence = confidence
+            existing_analysis.analysis_date = func.now()
+            existing_analysis.total_papers_analyzed = paper_count
+            existing_analysis.date_range_start = date_range_start
+            existing_analysis.date_range_end = date_range_end
+            existing_analysis.metrics = metrics.to_dict()
+            existing_analysis.rule_scores = rule_scores
+            existing_analysis.rationale = rationale
+            analysis = existing_analysis
+        else:
+            # Create new
+            logger.info("Creating new analysis record...")
+            analysis = TechnologyAnalysis(
+                technology_id=technology_id,
+                current_phase=phase.value,
+                phase_confidence=confidence,
+                total_papers_analyzed=paper_count,
+                date_range_start=date_range_start,
+                date_range_end=date_range_end,
+                rationale=rationale
+            )
+            analysis.metrics = metrics.to_dict()
+            analysis.rule_scores = rule_scores
+            db.add(analysis)
+
+        db.commit()
+        db.refresh(analysis)
+
+        logger.info(f"Analysis complete: {phase.value} (confidence: {confidence:.2f})")
+
+        return analysis
+
+    except ValueError as e:
+        logger.error(f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.get(
+    "/technologies/{technology_id}/analysis",
+    response_model=AnalysisResponse,
+    tags=["Analysis"]
+)
+def get_technology_analysis(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the latest Hype Cycle analysis for a technology.
+
+    - **technology_id**: ID of the technology
+
+    Returns the most recent analysis including:
+    - Current phase determination
+    - Confidence score
+    - Calculated metrics
+    - Rule evaluation results
+    - Rationale for phase determination
+
+    Note: If no analysis exists, run /analyze-papers first.
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Get analysis
+    analysis = db.query(TechnologyAnalysis)\
+        .filter(TechnologyAnalysis.technology_id == technology_id)\
+        .first()
+
+    if not analysis:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No analysis found for technology {technology_id}. Run /analyze-papers first."
+        )
+
+    return analysis
 
 
 if __name__ == "__main__":
