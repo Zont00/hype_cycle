@@ -5,6 +5,7 @@ from .reddit_post import RedditPostBase, RedditPostCreate, RedditPostResponse, R
 from .news_article import NewsArticleBase, NewsArticleCreate, NewsArticleResponse, NewsCollectionStats
 from .finance import StockPriceBase, StockPriceResponse, StockInfoBase, StockInfoResponse, FinanceCollectionStats
 from .analysis import AnalysisResponse, AnalysisStats
+from .patent_analysis import PatentAnalysisResponse
 
 __all__ = [
     "TechnologyBase", "TechnologyCreate", "TechnologyUpdate", "TechnologyResponse",
@@ -13,5 +14,6 @@ __all__ = [
     "RedditPostBase", "RedditPostCreate", "RedditPostResponse", "RedditCollectionStats",
     "NewsArticleBase", "NewsArticleCreate", "NewsArticleResponse", "NewsCollectionStats",
     "StockPriceBase", "StockPriceResponse", "StockInfoBase", "StockInfoResponse", "FinanceCollectionStats",
-    "AnalysisResponse", "AnalysisStats"
+    "AnalysisResponse", "AnalysisStats",
+    "PatentAnalysisResponse"
 ]

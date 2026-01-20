@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
+from datetime import datetime
 import logging
 
 from .database import engine, get_db, Base
@@ -12,7 +14,8 @@ from .schemas import (
     RedditPostResponse, RedditCollectionStats,
     NewsArticleResponse, NewsCollectionStats,
     StockPriceResponse, StockInfoResponse, FinanceCollectionStats,
-    AnalysisResponse
+    AnalysisResponse,
+    PatentAnalysisResponse
 )
 from .services.semantic_scholar_collector import SemanticScholarCollector
 from .services.patents_view_collector import PatentsViewCollector
@@ -20,7 +23,9 @@ from .services.reddit_collector import RedditCollector
 from .services.news_collector import NewsCollector
 from .services.yahoo_finance_collector import YahooFinanceCollector
 from .services.paper_metrics_calculator import PaperMetricsCalculator
+from .services.patent_metrics_calculator import PatentMetricsCalculator
 from .services.hype_cycle_rule_engine import HypeCycleRuleEngine
+from .services.patent_hype_cycle_rule_engine import PatentHypeCycleRuleEngine
 from .config import settings
 
 # Configure logging
@@ -862,6 +867,155 @@ def get_technology_analysis(
         )
 
     return analysis
+
+
+@app.post(
+    "/technologies/{technology_id}/analyze-patents",
+    response_model=PatentAnalysisResponse,
+    status_code=200,
+    tags=["Analysis"]
+)
+async def analyze_patents_for_hype_cycle(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze patents for a technology to calculate Hype Cycle metrics.
+
+    - **technology_id**: ID of the technology to analyze
+
+    Process:
+    1. Calculate metrics from collected patents:
+       - Patent velocity trends (patents per year)
+       - Citation metrics (forward/backward citations)
+       - Assignee analysis (concentration, corporate vs academic)
+       - Geographic distribution
+       - Patent type distribution (utility vs design)
+
+    2. Store patent metrics in database (patent_metrics field)
+
+    Returns:
+    - Calculated patent metrics
+    - Assignee concentration (HHI index)
+    - Geographic spread
+    - Patent type distribution
+    - Data quality indicators
+
+    Requirements:
+    - Minimum 10 patents collected for reliable analysis
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Check if patents exist
+    patent_count = db.query(Patent).filter(Patent.technology_id == technology_id).count()
+    min_patents = settings.hype_cycle_min_patents_for_analysis
+
+    if patent_count < min_patents:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient patents for analysis. Found {patent_count}, need at least {min_patents}."
+        )
+
+    try:
+        logger.info(f"Starting patent analysis for technology {technology_id} ({technology.name})...")
+
+        # Calculate metrics
+        logger.info("Calculating metrics from patents...")
+        calculator = PatentMetricsCalculator(db)
+        metrics = calculator.calculate_metrics(technology_id)
+
+        # Determine phase using patent rule engine
+        logger.info("Determining Hype Cycle phase from patents...")
+        rule_engine = PatentHypeCycleRuleEngine()
+        phase, confidence, phase_scores, rationale = rule_engine.determine_phase(metrics)
+
+        # Get or create analysis record
+        existing_analysis = db.query(TechnologyAnalysis)\
+            .filter(TechnologyAnalysis.technology_id == technology_id)\
+            .first()
+
+        # Store patent metrics with phase info
+        patent_metrics_with_phase = metrics.to_dict()
+        patent_metrics_with_phase['patent_phase'] = phase.value
+        patent_metrics_with_phase['patent_phase_confidence'] = confidence
+        patent_metrics_with_phase['patent_phase_scores'] = phase_scores
+        patent_metrics_with_phase['patent_rationale'] = rationale
+
+        if existing_analysis:
+            # Update existing with patent metrics
+            logger.info("Updating existing analysis with patent metrics...")
+            existing_analysis.patent_metrics = patent_metrics_with_phase
+            existing_analysis.patent_analysis_date = func.now()
+        else:
+            # Create new analysis record with patent metrics only
+            logger.info("Creating new analysis record with patent metrics...")
+            from .models.hype_cycle_phase import HypeCyclePhase as HCPhase
+            analysis = TechnologyAnalysis(
+                technology_id=technology_id,
+                current_phase=HCPhase.TECHNOLOGY_TRIGGER.value,  # Placeholder until paper analysis
+                phase_confidence=0.0,  # Will be updated when papers are analyzed
+                total_papers_analyzed=0
+            )
+            analysis.metrics = {}
+            analysis.patent_metrics = patent_metrics_with_phase
+            db.add(analysis)
+
+        db.commit()
+
+        logger.info(f"Patent analysis complete: {patent_count} patents analyzed, phase: {phase.value}")
+
+        # Build response
+        return PatentAnalysisResponse(
+            technology_id=technology_id,
+            analysis_date=datetime.now(),
+            total_patents_analyzed=metrics.total_patents,
+            current_phase=phase.value,
+            phase_confidence=confidence,
+            phase_scores=phase_scores,
+            rationale=rationale,
+            patent_velocity=metrics.patent_velocity,
+            velocity_trend=metrics.velocity_trend,
+            avg_patents_per_year=metrics.avg_patents_per_year,
+            peak_year=metrics.peak_year,
+            peak_count=metrics.peak_count,
+            recent_velocity=metrics.recent_velocity,
+            total_forward_citations=metrics.total_forward_citations,
+            total_backward_citations=metrics.total_backward_citations,
+            avg_forward_citations=metrics.avg_forward_citations,
+            avg_backward_citations=metrics.avg_backward_citations,
+            citation_ratio=metrics.citation_ratio,
+            median_forward_citations=metrics.median_forward_citations,
+            highly_cited_count=metrics.highly_cited_count,
+            unique_assignees_count=metrics.unique_assignees_count,
+            top_assignees=[[name, count] for name, count in metrics.top_assignees],
+            assignee_concentration_hhi=metrics.assignee_concentration_hhi,
+            corporate_percentage=metrics.corporate_percentage,
+            academic_percentage=metrics.academic_percentage,
+            individual_percentage=metrics.individual_percentage,
+            new_entrants_by_year=metrics.new_entrants_by_year,
+            country_distribution=metrics.country_distribution,
+            unique_countries=metrics.unique_countries,
+            top_countries=[[country, count] for country, count in metrics.top_countries],
+            utility_percentage=metrics.utility_percentage,
+            design_percentage=metrics.design_percentage,
+            other_type_percentage=metrics.other_type_percentage,
+            first_patent_year=metrics.first_patent_year,
+            technology_age_years=metrics.technology_age_years,
+            patents_last_year=metrics.patents_last_year,
+            patents_last_2_years=metrics.patents_last_2_years,
+            patents_with_abstract=metrics.patents_with_abstract,
+            coverage_percentage=metrics.coverage_percentage
+        )
+
+    except ValueError as e:
+        logger.error(f"Patent analysis failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Patent analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Patent analysis failed: {str(e)}")
 
 
 if __name__ == "__main__":

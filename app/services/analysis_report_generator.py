@@ -154,7 +154,14 @@ Based on analysis of **{analysis.total_papers_analyzed:,}** scientific papers, *
 - **Papers with PDFs**: {metrics['papers_with_pdf']:,} ({metrics['papers_with_pdf']/analysis.total_papers_analyzed*100:.1f}%)
 - **Overall coverage**: {metrics['coverage_percentage']:.1f}%
 
----
+"""
+
+        # Add patent metrics section if available
+        patent_metrics = analysis.patent_metrics
+        if patent_metrics:
+            report += self._build_patent_metrics_section(patent_metrics)
+
+        report += f"""---
 
 ## Phase Determination Rationale
 
@@ -272,3 +279,103 @@ Based on the current phase (**{phase_info['name']}**), we recommend:
 """
 
         return report
+
+    def _build_patent_metrics_section(self, patent_metrics: Dict) -> str:
+        """Build the patent metrics section of the report"""
+
+        section = """---
+
+## Patent Analysis Metrics
+
+"""
+
+        # Volume metrics
+        section += f"""### Patent Volume
+
+- **Total patents analyzed**: {patent_metrics.get('total_patents', 0):,}
+- **Average patents per year**: {patent_metrics.get('avg_patents_per_year', 0):.1f}
+- **Peak year**: {patent_metrics.get('peak_year', 'N/A')} ({patent_metrics.get('peak_count', 0)} patents)
+- **Recent velocity** (last 2 years): {patent_metrics.get('recent_velocity', 0):.1f} patents/year
+- **Velocity trend**: {patent_metrics.get('velocity_trend', 'N/A')}
+- **Technology age**: {patent_metrics.get('technology_age_years', 0)} years (first patent: {patent_metrics.get('first_patent_year', 'N/A')})
+
+"""
+
+        # Citation metrics
+        section += f"""### Citation Metrics
+
+- **Total forward citations**: {patent_metrics.get('total_forward_citations', 0):,}
+- **Total backward citations**: {patent_metrics.get('total_backward_citations', 0):,}
+- **Average forward citations**: {patent_metrics.get('avg_forward_citations', 0):.1f}
+- **Average backward citations**: {patent_metrics.get('avg_backward_citations', 0):.1f}
+- **Citation ratio** (forward/backward): {patent_metrics.get('citation_ratio', 0):.2f}
+- **Median forward citations**: {patent_metrics.get('median_forward_citations', 0):.1f}
+- **Highly cited patents**: {patent_metrics.get('highly_cited_count', 0)}
+
+"""
+
+        # Assignee metrics
+        section += f"""### Assignee Analysis
+
+- **Unique assignees**: {patent_metrics.get('unique_assignees_count', 0)}
+- **Assignee concentration (HHI)**: {patent_metrics.get('assignee_concentration_hhi', 0):.3f}
+"""
+        # Interpret HHI
+        hhi = patent_metrics.get('assignee_concentration_hhi', 0)
+        if hhi < 0.15:
+            hhi_interpretation = "Low concentration (competitive market)"
+        elif hhi < 0.25:
+            hhi_interpretation = "Moderate concentration"
+        else:
+            hhi_interpretation = "High concentration (few dominant players)"
+        section += f"  - *Interpretation*: {hhi_interpretation}\n"
+
+        section += f"""
+#### Assignee Type Distribution
+
+- **Corporate**: {patent_metrics.get('corporate_percentage', 0):.1f}%
+- **Academic**: {patent_metrics.get('academic_percentage', 0):.1f}%
+- **Individual**: {patent_metrics.get('individual_percentage', 0):.1f}%
+
+#### Top Assignees
+
+"""
+        top_assignees = patent_metrics.get('top_assignees', [])
+        for i, assignee_data in enumerate(top_assignees[:10], 1):
+            if isinstance(assignee_data, (list, tuple)) and len(assignee_data) >= 2:
+                name, count = assignee_data[0], assignee_data[1]
+                section += f"{i}. **{name}**: {count} patents\n"
+
+        # Geographic metrics
+        section += f"""
+
+### Geographic Distribution
+
+- **Unique countries**: {patent_metrics.get('unique_countries', 0)}
+
+#### Top Countries
+
+"""
+        top_countries = patent_metrics.get('top_countries', [])
+        for country_data in top_countries[:5]:
+            if isinstance(country_data, (list, tuple)) and len(country_data) >= 2:
+                country, count = country_data[0], country_data[1]
+                section += f"- **{country}**: {count} patents\n"
+
+        # Patent type metrics
+        section += f"""
+
+### Patent Type Distribution
+
+- **Utility patents**: {patent_metrics.get('utility_percentage', 0):.1f}%
+- **Design patents**: {patent_metrics.get('design_percentage', 0):.1f}%
+- **Other types**: {patent_metrics.get('other_type_percentage', 0):.1f}%
+
+### Patent Data Quality
+
+- **Patents with abstracts**: {patent_metrics.get('patents_with_abstract', 0):,}
+- **Coverage**: {patent_metrics.get('coverage_percentage', 0):.1f}%
+
+"""
+
+        return section

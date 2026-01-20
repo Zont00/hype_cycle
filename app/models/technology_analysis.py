@@ -32,6 +32,10 @@ class TechnologyAnalysis(Base):
     # Core metrics (JSON serialized for flexibility)
     _metrics = Column("metrics", Text, nullable=False)  # Will store MetricsSnapshot as JSON
 
+    # Patent metrics (JSON serialized)
+    _patent_metrics = Column("patent_metrics", Text, nullable=True)  # Will store PatentMetricsSnapshot as JSON
+    patent_analysis_date = Column(DateTime(timezone=True), nullable=True)
+
     # Rule evaluation results
     _rule_scores = Column("rule_scores", Text, nullable=True)  # Dict of rule -> score
 
@@ -70,6 +74,21 @@ class TechnologyAnalysis(Base):
             self._rule_scores = json.dumps(value)
         else:
             self._rule_scores = None
+
+    @property
+    def patent_metrics(self):
+        """Get patent metrics as Python dict"""
+        if self._patent_metrics:
+            return json.loads(self._patent_metrics)
+        return {}
+
+    @patent_metrics.setter
+    def patent_metrics(self, value):
+        """Set patent metrics from Python dict"""
+        if value:
+            self._patent_metrics = json.dumps(value)
+        else:
+            self._patent_metrics = None
 
     def __repr__(self):
         return f"<TechnologyAnalysis(id={self.id}, technology_id={self.technology_id}, phase='{self.current_phase}')>"

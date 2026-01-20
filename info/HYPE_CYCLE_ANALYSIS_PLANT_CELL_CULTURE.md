@@ -91,6 +91,79 @@ Early publicity produces a number of success stories—often accompanied by scor
 
 ---
 
+## Patent Analysis Metrics
+
+### Patent Volume
+
+- **Total patents analyzed**: 708
+- **Average patents per year**: 64.4
+- **Peak year**: 2015 (89 patents)
+- **Recent velocity** (last 2 years): 27.0 patents/year
+- **Velocity trend**: decreasing
+- **Technology age**: 11 years (first patent: 2015)
+
+### Citation Metrics
+
+- **Total forward citations**: 351
+- **Total backward citations**: 2,181
+- **Average forward citations**: 0.5
+- **Average backward citations**: 3.1
+- **Citation ratio** (forward/backward): 0.16
+- **Median forward citations**: 0.0
+- **Highly cited patents**: 0
+
+### Assignee Analysis
+
+- **Unique assignees**: 140
+- **Assignee concentration (HHI)**: 0.151
+  - *Interpretation*: Moderate concentration
+
+#### Assignee Type Distribution
+
+- **Corporate**: 88.3%
+- **Academic**: 11.4%
+- **Individual**: 0.3%
+
+#### Top Assignees
+
+1. **ANTHURA B.V.**: 250 patents
+2. **Floricultura**: 96 patents
+3. **BAYER CROPSCIENCE AKTIENGESELLSCHAFT**: 54 patents
+4. **Syngenta Crop Protection AG**: 32 patents
+5. **BASF Agricultural Solutions Seed US LLC**: 28 patents
+6. **Syngenta Participations AG**: 26 patents
+7. **Monsanto Technology LLC**: 19 patents
+8. **COTTON SEED INTERNATIONAL PROPRIETARY LIMITED**: 14 patents
+9. **The Regents of the University of California**: 5 patents
+10. **Max-Planck-Gesellschaft zur Föderung der Wissenschaften e.V.**: 5 patents
+
+
+### Geographic Distribution
+
+- **Unique countries**: 31
+
+#### Top Countries
+
+- **NL**: 352 patents
+- **US**: 179 patents
+- **CH**: 64 patents
+- **DE**: 27 patents
+- **AU**: 15 patents
+
+
+### Patent Type Distribution
+
+- **Utility patents**: 47.3%
+- **Design patents**: 0.3%
+- **Other types**: 52.4%
+
+### Patent Data Quality
+
+- **Patents with abstracts**: 706
+- **Coverage**: 99.7%
+
+---
+
 ## Phase Determination Rationale
 
 Phase determined: Peak of Inflated Expectations
@@ -176,7 +249,7 @@ Based on the current phase (**Peak of Inflated Expectations**), we recommend:
 
 ---
 
-**Report Generated**: 2026-01-12 09:53:17
+**Report Generated**: 2026-01-19 15:31:14
 **Analysis Engine Version**: 1.0.0
 **Technology**: Plant Cell Culture
 **Hype Cycle Phase**: Peak of Inflated Expectations
