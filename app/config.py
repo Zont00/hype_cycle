@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     hype_cycle_applied_research_very_high: float = 80.0  # % = overwhelmingly applied
     hype_cycle_min_papers_for_analysis: int = 100  # minimum papers needed
     hype_cycle_min_patents_for_analysis: int = 10  # minimum patents needed
+    hype_cycle_min_reddit_posts_for_analysis: int = 10  # minimum reddit posts needed
+    hype_cycle_min_news_articles_for_analysis: int = 10  # minimum news articles needed
+    hype_cycle_min_finance_records_for_analysis: int = 20  # minimum finance records needed
 
     class Config:
         env_file = ".env"

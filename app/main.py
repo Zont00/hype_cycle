@@ -15,7 +15,10 @@ from .schemas import (
     NewsArticleResponse, NewsCollectionStats,
     StockPriceResponse, StockInfoResponse, FinanceCollectionStats,
     AnalysisResponse,
-    PatentAnalysisResponse
+    PatentAnalysisResponse,
+    RedditAnalysisResponse,
+    NewsAnalysisResponse,
+    FinanceAnalysisResponse
 )
 from .services.semantic_scholar_collector import SemanticScholarCollector
 from .services.patents_view_collector import PatentsViewCollector
@@ -24,8 +27,14 @@ from .services.news_collector import NewsCollector
 from .services.yahoo_finance_collector import YahooFinanceCollector
 from .services.paper_metrics_calculator import PaperMetricsCalculator
 from .services.patent_metrics_calculator import PatentMetricsCalculator
+from .services.reddit_metrics_calculator import RedditMetricsCalculator
+from .services.news_metrics_calculator import NewsMetricsCalculator
+from .services.finance_metrics_calculator import FinanceMetricsCalculator
 from .services.hype_cycle_rule_engine import HypeCycleRuleEngine
 from .services.patent_hype_cycle_rule_engine import PatentHypeCycleRuleEngine
+from .services.reddit_hype_cycle_rule_engine import RedditHypeCycleRuleEngine
+from .services.news_hype_cycle_rule_engine import NewsHypeCycleRuleEngine
+from .services.finance_hype_cycle_rule_engine import FinanceHypeCycleRuleEngine
 from .config import settings
 
 # Configure logging
@@ -1016,6 +1025,332 @@ async def analyze_patents_for_hype_cycle(
     except Exception as e:
         logger.error(f"Patent analysis failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Patent analysis failed: {str(e)}")
+
+
+@app.post(
+    "/technologies/{technology_id}/analyze-reddit",
+    response_model=RedditAnalysisResponse,
+    status_code=200,
+    tags=["Analysis"]
+)
+async def analyze_reddit_for_hype_cycle(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze Reddit posts for a technology to calculate Hype Cycle metrics.
+
+    - **technology_id**: ID of the technology to analyze
+
+    Process:
+    1. Calculate metrics from collected Reddit posts:
+       - Post velocity trends (posts per month)
+       - Engagement metrics (score, comments)
+       - Subreddit distribution
+       - Author distribution
+       - Topic/keyword analysis
+
+    2. Determine Hype Cycle phase using rule engine
+
+    Returns:
+    - Calculated Reddit metrics
+    - Current phase determination
+    - Engagement analysis
+    - Subreddit coverage
+    - Data quality indicators
+
+    Requirements:
+    - Minimum 10 posts collected for reliable analysis
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Check if posts exist
+    post_count = db.query(RedditPost).filter(RedditPost.technology_id == technology_id).count()
+    min_posts = settings.hype_cycle_min_reddit_posts_for_analysis
+
+    if post_count < min_posts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient Reddit posts for analysis. Found {post_count}, need at least {min_posts}."
+        )
+
+    try:
+        logger.info(f"Starting Reddit analysis for technology {technology_id} ({technology.name})...")
+
+        # Calculate metrics
+        logger.info("Calculating metrics from Reddit posts...")
+        calculator = RedditMetricsCalculator(db)
+        metrics = calculator.calculate_metrics(technology_id)
+
+        # Determine phase using rule engine
+        logger.info("Determining Hype Cycle phase from Reddit...")
+        rule_engine = RedditHypeCycleRuleEngine()
+        phase, confidence, phase_scores, rationale = rule_engine.determine_phase(metrics)
+
+        logger.info(f"Reddit analysis complete: {post_count} posts analyzed, phase: {phase.value}")
+
+        # Build response
+        return RedditAnalysisResponse(
+            technology_id=technology_id,
+            analysis_date=datetime.now(),
+            total_posts_analyzed=metrics.total_posts,
+            current_phase=phase.value,
+            phase_confidence=confidence,
+            phase_scores=phase_scores,
+            rationale=rationale,
+            post_velocity=metrics.post_velocity,
+            velocity_trend=metrics.velocity_trend,
+            avg_posts_per_month=metrics.avg_posts_per_month,
+            peak_month=metrics.peak_month,
+            peak_count=metrics.peak_count,
+            recent_velocity=metrics.recent_velocity,
+            total_score=metrics.total_score,
+            avg_score_per_post=metrics.avg_score_per_post,
+            median_score=metrics.median_score,
+            total_comments=metrics.total_comments,
+            avg_comments_per_post=metrics.avg_comments_per_post,
+            median_comments=metrics.median_comments,
+            engagement_trend=metrics.engagement_trend,
+            highly_engaged_count=metrics.highly_engaged_count,
+            unique_subreddits=metrics.unique_subreddits,
+            top_subreddits=[[sub, count] for sub, count in metrics.top_subreddits],
+            subreddit_concentration_hhi=metrics.subreddit_concentration_hhi,
+            unique_authors=metrics.unique_authors,
+            top_authors=[[author, count] for author, count in metrics.top_authors],
+            author_concentration_hhi=metrics.author_concentration_hhi,
+            self_post_percentage=metrics.self_post_percentage,
+            link_post_percentage=metrics.link_post_percentage,
+            top_keywords=[[kw, count] for kw, count in metrics.top_keywords],
+            emerging_keywords=metrics.emerging_keywords,
+            declining_keywords=metrics.declining_keywords,
+            first_post_date=metrics.first_post_date,
+            posts_last_month=metrics.posts_last_month,
+            posts_last_3_months=metrics.posts_last_3_months,
+            posts_first_3_months=metrics.posts_first_3_months,
+            growth_rate_early_vs_late=metrics.growth_rate_early_vs_late,
+            posts_with_body=metrics.posts_with_body,
+            coverage_percentage=metrics.coverage_percentage
+        )
+
+    except ValueError as e:
+        logger.error(f"Reddit analysis failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Reddit analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Reddit analysis failed: {str(e)}")
+
+
+@app.post(
+    "/technologies/{technology_id}/analyze-news",
+    response_model=NewsAnalysisResponse,
+    status_code=200,
+    tags=["Analysis"]
+)
+async def analyze_news_for_hype_cycle(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze news articles for a technology to calculate Hype Cycle metrics.
+
+    - **technology_id**: ID of the technology to analyze
+
+    Process:
+    1. Calculate metrics from collected news articles:
+       - Article velocity trends (articles per month)
+       - Source distribution
+       - Author distribution
+       - Topic/keyword analysis
+
+    2. Determine Hype Cycle phase using rule engine
+
+    Returns:
+    - Calculated News metrics
+    - Current phase determination
+    - Source coverage analysis
+    - Data quality indicators
+
+    Requirements:
+    - Minimum 10 articles collected for reliable analysis
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Check if articles exist
+    article_count = db.query(NewsArticle).filter(NewsArticle.technology_id == technology_id).count()
+    min_articles = settings.hype_cycle_min_news_articles_for_analysis
+
+    if article_count < min_articles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient news articles for analysis. Found {article_count}, need at least {min_articles}."
+        )
+
+    try:
+        logger.info(f"Starting News analysis for technology {technology_id} ({technology.name})...")
+
+        # Calculate metrics
+        logger.info("Calculating metrics from news articles...")
+        calculator = NewsMetricsCalculator(db)
+        metrics = calculator.calculate_metrics(technology_id)
+
+        # Determine phase using rule engine
+        logger.info("Determining Hype Cycle phase from News...")
+        rule_engine = NewsHypeCycleRuleEngine()
+        phase, confidence, phase_scores, rationale = rule_engine.determine_phase(metrics)
+
+        logger.info(f"News analysis complete: {article_count} articles analyzed, phase: {phase.value}")
+
+        # Build response
+        return NewsAnalysisResponse(
+            technology_id=technology_id,
+            analysis_date=datetime.now(),
+            total_articles_analyzed=metrics.total_articles,
+            current_phase=phase.value,
+            phase_confidence=confidence,
+            phase_scores=phase_scores,
+            rationale=rationale,
+            article_velocity=metrics.article_velocity,
+            velocity_trend=metrics.velocity_trend,
+            avg_articles_per_month=metrics.avg_articles_per_month,
+            peak_month=metrics.peak_month,
+            peak_count=metrics.peak_count,
+            recent_velocity=metrics.recent_velocity,
+            unique_sources=metrics.unique_sources,
+            top_sources=[[source, count] for source, count in metrics.top_sources],
+            source_concentration_hhi=metrics.source_concentration_hhi,
+            unique_authors=metrics.unique_authors,
+            top_authors=[[author, count] for author, count in metrics.top_authors],
+            articles_without_author_percentage=metrics.articles_without_author_percentage,
+            top_keywords=[[kw, count] for kw, count in metrics.top_keywords],
+            emerging_keywords=metrics.emerging_keywords,
+            declining_keywords=metrics.declining_keywords,
+            first_article_date=metrics.first_article_date,
+            articles_last_month=metrics.articles_last_month,
+            articles_last_3_months=metrics.articles_last_3_months,
+            articles_first_3_months=metrics.articles_first_3_months,
+            growth_rate_early_vs_late=metrics.growth_rate_early_vs_late,
+            articles_with_content=metrics.articles_with_content,
+            articles_with_description=metrics.articles_with_description,
+            coverage_percentage=metrics.coverage_percentage
+        )
+
+    except ValueError as e:
+        logger.error(f"News analysis failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"News analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"News analysis failed: {str(e)}")
+
+
+@app.post(
+    "/technologies/{technology_id}/analyze-finance",
+    response_model=FinanceAnalysisResponse,
+    status_code=200,
+    tags=["Analysis"]
+)
+async def analyze_finance_for_hype_cycle(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Analyze financial data for a technology to calculate Hype Cycle metrics.
+
+    - **technology_id**: ID of the technology to analyze
+
+    Process:
+    1. Calculate metrics from collected stock/market data:
+       - Price metrics (returns, volatility, drawdown)
+       - Volume trends
+       - Fundamental metrics (P/E, market cap)
+       - Correlation analysis
+
+    2. Determine Hype Cycle phase using rule engine
+
+    Returns:
+    - Calculated Finance metrics
+    - Current phase determination
+    - Per-ticker performance breakdown
+    - Risk metrics (Sharpe ratio, drawdown)
+    - Data quality indicators
+
+    Requirements:
+    - Minimum 20 price records collected for reliable analysis
+    """
+    # Verify technology exists
+    technology = db.query(Technology).filter(Technology.id == technology_id).first()
+    if not technology:
+        raise HTTPException(status_code=404, detail=f"Technology with ID {technology_id} not found")
+
+    # Check if price data exists
+    price_count = db.query(StockPrice).filter(StockPrice.technology_id == technology_id).count()
+    min_records = settings.hype_cycle_min_finance_records_for_analysis
+
+    if price_count < min_records:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient finance data for analysis. Found {price_count} records, need at least {min_records}."
+        )
+
+    try:
+        logger.info(f"Starting Finance analysis for technology {technology_id} ({technology.name})...")
+
+        # Calculate metrics
+        logger.info("Calculating metrics from finance data...")
+        calculator = FinanceMetricsCalculator(db)
+        metrics = calculator.calculate_metrics(technology_id)
+
+        # Determine phase using rule engine
+        logger.info("Determining Hype Cycle phase from Finance...")
+        rule_engine = FinanceHypeCycleRuleEngine()
+        phase, confidence, phase_scores, rationale = rule_engine.determine_phase(metrics)
+
+        logger.info(f"Finance analysis complete: {price_count} records analyzed, phase: {phase.value}")
+
+        # Build response
+        return FinanceAnalysisResponse(
+            technology_id=technology_id,
+            analysis_date=datetime.now(),
+            total_price_records=metrics.total_price_records,
+            current_phase=phase.value,
+            phase_confidence=confidence,
+            phase_scores=phase_scores,
+            rationale=rationale,
+            tickers_analyzed=metrics.tickers_analyzed,
+            date_range_start=metrics.date_range_start,
+            date_range_end=metrics.date_range_end,
+            avg_daily_return=metrics.avg_daily_return,
+            total_return=metrics.total_return,
+            volatility=metrics.volatility,
+            max_drawdown=metrics.max_drawdown,
+            sharpe_ratio=metrics.sharpe_ratio,
+            price_trend=metrics.price_trend,
+            price_change_last_month=metrics.price_change_last_month,
+            price_change_last_3_months=metrics.price_change_last_3_months,
+            avg_daily_volume=metrics.avg_daily_volume,
+            volume_trend=metrics.volume_trend,
+            volume_change_percentage=metrics.volume_change_percentage,
+            ticker_performance=metrics.ticker_performance,
+            avg_pe_ratio=metrics.avg_pe_ratio,
+            avg_market_cap=metrics.avg_market_cap,
+            sectors_represented=metrics.sectors_represented,
+            industries_represented=metrics.industries_represented,
+            avg_correlation_between_tickers=metrics.avg_correlation_between_tickers,
+            records_with_volume=metrics.records_with_volume,
+            coverage_percentage=metrics.coverage_percentage
+        )
+
+    except ValueError as e:
+        logger.error(f"Finance analysis failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Finance analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Finance analysis failed: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@ from .news_article import NewsArticleBase, NewsArticleCreate, NewsArticleRespons
 from .finance import StockPriceBase, StockPriceResponse, StockInfoBase, StockInfoResponse, FinanceCollectionStats
 from .analysis import AnalysisResponse, AnalysisStats
 from .patent_analysis import PatentAnalysisResponse
+from .reddit_analysis import RedditAnalysisResponse
+from .news_analysis import NewsAnalysisResponse
+from .finance_analysis import FinanceAnalysisResponse
 
 __all__ = [
     "TechnologyBase", "TechnologyCreate", "TechnologyUpdate", "TechnologyResponse",
@@ -15,5 +18,8 @@ __all__ = [
     "NewsArticleBase", "NewsArticleCreate", "NewsArticleResponse", "NewsCollectionStats",
     "StockPriceBase", "StockPriceResponse", "StockInfoBase", "StockInfoResponse", "FinanceCollectionStats",
     "AnalysisResponse", "AnalysisStats",
-    "PatentAnalysisResponse"
+    "PatentAnalysisResponse",
+    "RedditAnalysisResponse",
+    "NewsAnalysisResponse",
+    "FinanceAnalysisResponse"
 ]
